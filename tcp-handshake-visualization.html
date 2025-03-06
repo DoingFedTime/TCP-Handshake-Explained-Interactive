@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCP Handshake Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0a0a0a;
+            color: #33ff33;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            border-bottom: 1px solid #33ff33;
+            margin-bottom: 30px;
+            padding-bottom: 10px;
+        }
+        
+        h1, h2, h3 {
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(51, 255, 51, 0.5);
+        }
+        
+        .visualization-container {
+            background-color: #111;
+            border: 1px solid #33ff33;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 0 20px rgba(51, 255, 51, 0.2);
+            position: relative;
+            height: 400px;
+            overflow: hidden;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background-color: #111;
+            color: #33ff33;
+            border: 1px solid #33ff33;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background-color: #33ff33;
+            color: #111;
+            box-shadow: 0 0 10px rgba(51, 255, 51, 0.7);
+        }
+        
+        .explanation {
+            background-color: #111;
+            border: 1px solid #33ff33;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .code-section {
+            background-color: #111;
+            border: 1px solid #33ff33;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        pre {
+            background-color: #0a0a0a;
+            padding: 15px;
+            overflow-x: auto;
+            border-left: 3px solid #33ff33;
+        }
+        
+        code {
+            color: #33ff33;
+        }
+        
+        .packet {
+            position: absolute;
+            background-color: rgba(51, 255, 51, 0.2);
+            border: 1px solid #33ff33;
+            padding: 8px;
+            border-radius: 4px;
+            box-shadow: 0 0 8px rgba(51, 255, 51, 0.5);
+            transition: all 0.5s linear;
+            font-size: 10px;
+            z-index: 10;
+        }
+        
+        /* Packet types */
+        .packet-syn {
+            background-color: rgba(51, 153, 255, 0.3);
+            border-color: #3399ff;
+            box-shadow: 0 0 8px rgba(51, 153, 255, 0.5);
+        }
+        
+        .packet-synack {
+            background-color: rgba(153, 51, 255, 0.3);
+            border-color: #9933ff;
+            box-shadow: 0 0 8px rgba(153, 51, 255, 0.5);
+        }
+        
+        .packet-ack {
+            background-color: rgba(51, 255, 51, 0.3);
+            border-color: #33ff33;
+            box-shadow: 0 0 8px rgba(51, 255, 51, 0.5);
+        }
+        
+        .packet-rst {
+            background-color: rgba(255, 51, 51, 0.3);
+            border-color: #ff3333;
+            box-shadow: 0 0 8px rgba(255, 51, 51, 0.5);
+        }
+        
+        /* Packet animation trails */
+        .packet-trail {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #33ff33, transparent);
+            transform-origin: left;
+            animation: fadeOut 1s forwards;
+            z-index: 5;
+        }
+        
+        @keyframes fadeOut {
+            0% { opacity: 0.8; }
+            100% { opacity: 0; }
+        }
+        
+        .node {
+            position: absolute;
+            background-color: #111;
+            border: 2px solid #33ff33;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(51, 255, 51, 0.3);
+            text-align: center;
+            width: 180px;
+        }
+        
+        .status {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+        
+        /* Matrix code rain effect in background */
+        .matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.1;
+        }
+        
+        .tab-container {
+            margin-bottom: 20px;
+        }
+        
+        .tab-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .tab-button {
+            background-color: #0a0a0a;
+            color: #33ff33;
+            border: 1px solid #33ff33;
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+        
+        .tab-button.active {
+            background-color: #33ff33;
+            color: #0a0a0a;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 20px;
+            background-color: #111;
+            border: 1px solid #33ff33;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+
+        .scene-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        /* Typing effect */
+        .typewriter {
+            overflow: hidden;
+            border-right: .15em solid #33ff33;
+            white-space: nowrap;
+            margin: 0 auto;
+            letter-spacing: .15em;
+            animation: typing 3.5s steps(40, end), blink-caret .75s step-end infinite;
+        }
+        
+        @keyframes typing {
+            from { width: 0 }
+            to { width: 100% }
+        }
+        
+        @keyframes blink-caret {
+            from, to { border-color: transparent }
+            50% { border-color: #33ff33 }
+        }
+        
+        /* Terminal window style */
+        .terminal {
+            background-color: #0a0a0a;
+            padding: 15px;
+            border: 1px solid #33ff33;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(51, 255, 51, 0.3);
+        }
+        
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #33ff33;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .packet-details {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            background-color: rgba(10, 10, 10, 0.9);
+            border: 1px solid #33ff33;
+            padding: 10px;
+            max-width: 250px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="matrix-bg" id="matrixCanvas"></canvas>
+    
+    <div class="container">
+        <header>
+            <h1 class="typewriter">TCP Handshake Protocol Visualization</h1>
+        </header>
+        
+        <div class="terminal">
+            <div class="terminal-header">
+                <span>tcp_handshake.sh</span>
+                <span>user@localhost:~</span>
+            </div>
+            <p>> Initializing TCP handshake protocol demonstration...</p>
+            <p>> Loading connection parameters...</p>
+            <p>> Ready to establish connection between client and server.</p>
+        </div>
+        
+        <div class="visualization-container" id="visualization">
+            <div class="node" id="client" style="left: 50px; top: 150px;">
+                <div>CLIENT</div>
+                <div>CLOSED</div>
+            </div>
+            
+            <div class="node" id="server" style="right: 50px; top: 150px;">
+                <div>SERVER</div>
+                <div>LISTEN</div>
+            </div>
+            
+            <div class="packet-details" id="packetDetails">
+                <h3>Packet Details</h3>
+                <div id="packetInfo">Select a scenario to begin</div>
+            </div>
+            
+            <div class="status" id="statusMessage">
+                Select a scenario to begin
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="scene-buttons">
+                <button id="normalHandshake">Normal TCP Handshake</button>
+                <button id="synAckLost">SYN-ACK Lost Scenario</button>
+                <button id="rstScenario">RST Packet Scenario</button>
+                <button id="synFloodAttack">SYN Flood Attack</button>
+            </div>
+            <button id="reset">Reset</button>
+            <button id="pauseResume">Pause</button>
+            <button id="stepByStep">Step-by-Step Mode</button>
+        </div>
+        
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" data-tab="explanation">Explanation</button>
+                <button class="tab-button" data-tab="code">Code Example</button>
+                <button class="tab-button" data-tab="packets">Packet Structure</button>
+                <button class="tab-button" data-tab="security">Security Implications</button>
+            </div>
+            
+            <div class="tab-content active" id="explanation">
+                <h2>Understanding the TCP Handshake</h2>
+                
+                <p>The TCP handshake is a three-way process used to establish a reliable connection between two devices before data is exchanged:</p>
+                
+                <h3>1. SYN (Synchronize)</h3>
+                <p>The client sends a SYN packet to the server, indicating it wants to establish a connection. This packet contains an initial sequence number (ISN) that will be used to track bytes in the stream.</p>
+                
+                <h3>2. SYN-ACK (Synchronize-Acknowledge)</h3>
+                <p>The server responds with a SYN-ACK packet. This acknowledges the client's SYN packet (by incrementing the client's sequence number by 1) and includes the server's own sequence number.</p>
+                
+                <h3>3. ACK (Acknowledge)</h3>
+                <p>The client acknowledges the server's response by sending an ACK packet, which increments the server's sequence number by 1. After this step, a full-duplex connection is established.</p>
+                
+                <h3>Connection States</h3>
+                <p>During the handshake, the TCP connection transitions through several states:</p>
+                <ul>
+                    <li><strong>CLOSED:</strong> No connection</li>
+                    <li><strong>LISTEN:</strong> Server waiting for connections</li>
+                    <li><strong>SYN-SENT:</strong> Client has sent SYN, waiting for SYN-ACK</li>
+                    <li><strong>SYN-RECEIVED:</strong> Server has received SYN, sent SYN-ACK</li>
+                    <li><strong>ESTABLISHED:</strong> Connection established, data transfer can begin</li>
+                </ul>
+            </div>
+            
+            <div class="tab-content" id="code">
+                <h2>TCP Handshake in Code</h2>
+                
+                <h3>Socket Programming Example (C)</h3>
+                <pre><code>// Server-side code
+#include &lt;stdio.h>
+#include &lt;stdlib.h>
+#include &lt;string.h>
+#include &lt;unistd.h>
+#include &lt;sys/socket.h>
+#include &lt;netinet/in.h>
+
+int main() {
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
+    
+    // Creating socket
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+    
+    // Setting socket options
+    int opt = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+    
+    // Binding socket to port 8080
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(8080);
+    
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+    
+    // Listening for connections (TCP handshake happens here)
+    if (listen(server_fd, 3) < 0) {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+    
+    // Accepting a connection (completes the handshake)
+    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+        perror("accept");
+        exit(EXIT_FAILURE);
+    }
+    
+    // Connection established, can send/receive data
+    
+    return 0;
+}</code></pre>
+
+                <h3>Client-side Code Example</h3>
+                <pre><code>// Client-side code
+#include &lt;stdio.h>
+#include &lt;sys/socket.h>
+#include &lt;arpa/inet.h>
+#include &lt;unistd.h>
+#include &lt;string.h>
+
+int main() {
+    int sock = 0;
+    struct sockaddr_in serv_addr;
+    
+    // Creating socket
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        printf("\n Socket creation error \n");
+        return -1;
+    }
+    
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(8080);
+    
+    // Convert IPv4 address from text to binary
+    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+        printf("\nInvalid address/ Address not supported \n");
+        return -1;
+    }
+    
+    // Connect initiates the TCP handshake
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        printf("\nConnection Failed \n");
+        return -1;
+    }
+    
+    // Connection established, can send/receive data
+    
+    return 0;
+}</code></pre>
+            </div>
+            
+            <div class="tab-content" id="packets">
+                <h2>TCP Packet Structure</h2>
+                
+                <h3>TCP Header Format</h3>
+                <pre>
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |          Source Port          |       Destination Port        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                        Sequence Number                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                    Acknowledgment Number                      |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |  Data |       |C|E|U|A|P|R|S|F|                               |
+   | Offset| Res. |W|C|R|C|S|S|Y|I|            Window             |
+   |       |       |R|E|G|K|H|T|N|N|                               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |           Checksum            |         Urgent Pointer        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                    Options                    |    Padding    |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                             data                              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+                </pre>
+                
+                <h3>Key TCP Flags for Handshake</h3>
+                <ul>
+                    <li><strong>SYN (Synchronize):</strong> Initiates a connection</li>
+                    <li><strong>ACK (Acknowledge):</strong> Acknowledges received data</li>
+                    <li><strong>FIN (Finish):</strong> No more data from sender</li>
+                    <li><strong>RST (Reset):</strong> Reset the connection</li>
+                    <li><strong>PSH (Push):</strong> Push data to the application immediately</li>
+                    <li><strong>URG (Urgent):</strong> Urgent data present</li>
+                </ul>
+                
+                <h3>Handshake Packet Configuration</h3>
+                <ul>
+                    <li><strong>SYN packet:</strong> SYN=1, ACK=0</li>
+                    <li><strong>SYN-ACK packet:</strong> SYN=1, ACK=1</li>
+                    <li><strong>ACK packet:</strong> SYN=0, ACK=1</li>
+                </ul>
+            </div>
+            
+            <div class="tab-content" id="security">
+                <h2>Security Implications of TCP Handshake</h2>
+                
+                <h3>SYN Flood Attack</h3>
+                <p>A SYN flood is a form of denial-of-service attack where an attacker sends a sequence of SYN packets but never completes the handshake. This leaves connections in a half-open state and can exhaust server resources.</p>
+                
+                <h3>TCP Sequence Prediction</h3>
+                <p>If an attacker can predict the sequence numbers used in TCP connections, they can potentially hijack sessions or inject data into existing connections.</p>
+                
+                <h3>TCP Reset Attack</h3>
+                <p>An attacker can disrupt existing TCP connections by sending forged RST packets if they can guess or intercept valid sequence numbers.</p>
+                
+                <h3>Protection Mechanisms</h3>
+                <ul>
+                    <li><strong>SYN cookies:</strong> A technique to prevent SYN flood attacks by avoiding resource allocation until the handshake completes</li>
+                    <li><strong>Random Initial Sequence Numbers (ISN):</strong> Makes sequence prediction more difficult</li>
+                    <li><strong>TCP Authentication Option (TCP-AO):</strong> Authenticates TCP segments to prevent forgery</li>
+                    <li><strong>Firewall protection:</strong> Limiting SYN packets from a single source</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Matrix background effect
+        const canvas = document.getElementById('matrixCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        // Characters to display
+        const characters = "01";
+        const fontSize = 10;
+        const columns = canvas.width / fontSize;
+        
+        // Array to track the y position of each column
+        const drops = [];
+        for (let i = 0; i < columns; i++) {
+            drops[i] = 1;
+        }
+        
+        function drawMatrix() {
+            // Semi-transparent black to create fade effect
+            ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = "#33ff33";
+            ctx.font = fontSize + "px monospace";
+            
+            // For each column
+            for (let i = 0; i < drops.length; i++) {
+                // Random character
+                const text = characters.charAt(Math.floor(Math.random() * characters.length));
+                
+                // Draw character
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                
+                // Move to next position or reset to top
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+                    drops[i] = 0;
+                }
+                
+                drops[i]++;
+            }
+        }
+        
+        // Run the matrix effect
+        setInterval(drawMatrix, 50);
+        
+        // Tab functionality
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                // Remove active class from all buttons and content
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                // Add active class to clicked button and corresponding content
+                button.classList.add('active');
+                document.getElementById(button.getAttribute('data-tab')).classList.add('active');
+            });
+        });
+        
+        // TCP Handshake Visualization Logic
+        const clientNode = document.getElementById('client');
+        const serverNode = document.getElementById('server');
+        const statusMessage = document.getElementById('statusMessage');
+        const packetInfo = document.getElementById('packetInfo');
+        
+        let packets = [];
+        let animationState = {
+            running: false,
+            paused: false,
+            stepMode: false,
+            currentStep: 0,
+            scenarioType: 'normal'
+        };
+        
+        function updateClientState(state) {
+            clientNode.innerHTML = `<div>CLIENT</div><div>${state}</div>`;
+        }
+        
+        function updateServerState(state) {
+            serverNode.innerHTML = `<div>SERVER</div><div>${state}</div>`;
+        }
+        
+        function updateStatus(message) {
+            statusMessage.textContent = message;
+        }
+        
+        function updatePacketInfo(info) {
+            packetInfo.innerHTML = info;
+        }
+        
+        function createPacket(type, from, to, flagsText) {
+            const fromNode = from === 'client' ? clientNode : serverNode;
+            const toNode = to === 'client' ? clientNode : serverNode;
+            
+            const fromRect = fromNode.getBoundingClientRect();
+            const toRect = toNode.getBoundingClientRect();
+            const containerRect = document.getElementById('visualization').getBoundingClientRect();
+            
+            const fromX = fromRect.left - containerRect.left + fromRect.width / 2;
+            const fromY = fromRect.top - containerRect.top + fromRect.height / 2;
+            const toX = toRect.left - containerRect.left + toRect.width / 2;
+            const toY = toRect.top - containerRect.top + toRect.height / 2;
+            
+            // Create packet element
+            const packetEl = document.createElement('div');
+            packetEl.className = 'packet';
+            
+            // Add specific class based on packet type
+            if (type.includes('SYN') && type.includes('ACK')) {
+                packetEl.classList.add('packet-synack');
+            } else if (type.includes('SYN')) {
+                packetEl.classList.add('packet-syn');
+            } else if (type.includes('ACK')) {
+                packetEl.classList.add('packet-ack');
+            } else if (type.includes('RST')) {
+                packetEl.classList.add('packet-rst');
+            }
+            
+            // Enhanced packet display with flag visualization
+            let packetDisplay = `<div style="font-weight:bold">${type}</div>`;
+            
+            // Show flags visually
+            if (flagsText.includes('SYN=1')) {
+                packetDisplay += `<span style="color:#3399ff">■</span> `;
+            }
+            if (flagsText.includes('ACK=1')) {
+                packetDisplay += `<span style="color:#33ff33">■</span> `;
+            }
+            if (flagsText.includes('RST=1')) {
+                packetDisplay += `<span style="color:#ff3333">■</span> `;
+            }
+            
+            packetEl.innerHTML = packetDisplay;
+            packetEl.style.left = `${fromX}px`;
+            packetEl.style.top = `${fromY}px`;
+            
+            // Set custom properties for animation
+            packetEl.setAttribute('data-from-x', fromX);
+            packetEl.setAttribute('data-from-y', fromY);
+            packetEl.setAttribute('data-to-x', toX);
+            packetEl.setAttribute('data-to-y', toY);
+            packetEl.setAttribute('data-flags', flagsText);
+            packetEl.setAttribute('data-type', type);
+            
+            document.getElementById('visualization').appendChild(packetEl);
+            packets.push(packetEl);
+            
+            return packetEl;
+        }
+        
+        function animatePacket(packet, onComplete) {
+            const fromX = parseInt(packet.getAttribute('data-from-x'));
+            const fromY = parseInt(packet.getAttribute('data-from-y'));
+            const toX = parseInt(packet.getAttribute('data-to-x'));
+            const toY = parseInt(packet.getAttribute('data-to-y'));
+            
+            // Create trail element
+            const trail = document.createElement('div');
+            trail.className = 'packet-trail';
+            
+            // Calculate the angle and length of the trail
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+            
+            // Position and rotate the trail
+            trail.style.left = `${fromX}px`;
+            trail.style.top = `${fromY}px`;
+            trail.style.width = `${length}px`;
+            trail.style.transform = `rotate(${angle}deg)`;
+            
+            // Add trail to the container
+            document.getElementById('visualization').appendChild(trail);
+            
+            // Add class based on packet type for colored trails
+            const packetType = packet.getAttribute('data-type');
+            if (packetType.includes('SYN') && packetType.includes('ACK')) {
+                trail.style.background = 'linear-gradient(90deg, transparent, #9933ff, transparent)';
+            } else if (packetType.includes('SYN')) {
+                trail.style.background = 'linear-gradient(90deg, transparent, #3399ff, transparent)';
+            } else if (packetType.includes('ACK')) {
+                trail.style.background = 'linear-gradient(90deg, transparent, #33ff33, transparent)';
+            } else if (packetType.includes('RST')) {
+                trail.style.background = 'linear-gradient(90deg, transparent, #ff3333, transparent)';
+            }
+            
+            // Move the packet to destination
+            packet.style.left = `${toX}px`;
+            packet.style.top = `${toY}px`;
+            
+            // Clean up trail after animation
+            setTimeout(() => {
+                if (trail.parentNode) {
+                    trail.parentNode.removeChild(trail);
+                }
+            }, 1000);
+            
+            // Set up completion callback
+            setTimeout(() => {
+                if (onComplete) onComplete();
+            }, 1000); // Match the transition duration
+        }
+        
+        function removeAllPackets() {
+            packets.forEach(packet => {
+                if (packet.parentNode) {
+                    packet.parentNode.removeChild(packet);
+                }
+            });
+            packets = [];
+        }
+        
+        function resetVisualization() {
+            removeAllPackets();
+            updateClientState('CLOSED');
+            updateServerState('LISTEN');
+            updateStatus('Select a scenario to begin');
+            updatePacketInfo('Select a scenario to begin');
+            animationState.running = false;
+            animationState.paused = false;
+            animationState.currentStep = 0;
+        }
+        
+        function runNormalHandshake() {
+            if (animationState.running) resetVisualization();
+            
+            animationState.running = true;
+            animationState.scenarioType = 'normal';
+            animationState.currentStep = 0;
+            
+            updateStatus('Initiating TCP handshake...');
+            
+            const steps = [
+                // Step 1: Client sends SYN
+                () => {
+                    updateClientState('SYN-SENT');
+                    updateStatus('Step 1: Client sends SYN packet');
+                    updatePacketInfo(`
+                        <h4>SYN Packet</h4>
+                        <p>Flags: SYN=1, ACK=0</p>
+                        <p>Seq: 100</p>
+                        <p>Ack: 0</p>
+                        <p>Purpose: Client initiates connection</p>
+                        <div style="margin-top:10px; padding:5px; border:1px dashed #33ff33;">
+                            <div style="font-family:monospace; font-size:10px; margin-bottom:5px;">TCP Header Flags:</div>
+                            <div style="display:flex; gap:5px;">
+                                <span style="background-color:#3399ff; color:black; padding:2px 5px; border-radius:3px;">SYN</span>
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">ACK</span>
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">FIN</span>
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">RST</span>
+                            </div>
+                        </div>
+                    `);
+                    
+                    const synPacket = createPacket('SYN', 'client', 'server', 'SYN=1, ACK=0');
+                    animatePacket(synPacket, proceedToNextStep);
+                },
+                
+                // Step 2: Server sends SYN-ACK
+                () => {
+                    updateServerState('SYN-RECEIVED');
+                    updateStatus('Step 2: Server sends SYN-ACK packet');
+                    updatePacketInfo(`
+                        <h4>SYN-ACK Packet</h4>
+                        <p>Flags: SYN=1, ACK=1</p>
+                        <p>Seq: 200</p>
+                        <p>Ack: 101</p>
+                        <p>Purpose: Server acknowledges client's SYN and sends its own SYN</p>
+                        <div style="margin-top:10px; padding:5px; border:1px dashed #33ff33;">
+                            <div style="font-family:monospace; font-size:10px; margin-bottom:5px;">TCP Header Flags:</div>
+                            <div style="display:flex; gap:5px;">
+                                <span style="background-color:#3399ff; color:black; padding:2px 5px; border-radius:3px;">SYN</span>
+                                <span style="background-color:#33ff33; color:black; padding:2px 5px; border-radius:3px;">ACK</span>
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">FIN</span>
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">RST</span>
+                            </div>
+                        </div>
+                    `);
+                    
+                    const synAckPacket = createPacket('SYN-ACK', 'server', 'client', 'SYN=1, ACK=1');
+                    animatePacket(synAckPacket, proceedToNextStep);
+                },
+                
+                // Step 3: Client sends ACK
+                () => {
+                    updateClientState('ESTABLISHED');
+                    updateStatus('Step 3: Client sends ACK packet');
+                    updatePacketInfo(`
+                        <h4>ACK Packet</h4>
+                        <p>Flags: SYN=0, ACK=1</p>
+                        <p>Seq: 101</p>
+                        <p>Ack: 201</p>
+                        <p>Purpose: Client acknowledges server's SYN</p>
+                        <div style="margin-top:10px; padding:5px; border:1px dashed #33ff33;">
+                            <div style="font-family:monospace; font-size:10px; margin-bottom:5px;">TCP Header Flags:</div>
+                            <div style="display:flex; gap:5px;">
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">SYN</span>
+                                <span style="background-color:#33ff33; color:black; padding:2px 5px; border-radius:3px;">ACK</span>
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">FIN</span>
+                                <span style="background-color:#333; color:#999; padding:2px 5px; border-radius:3px;">RST</span>
+                            </div>
+                        </div>
+                    `);
+                    
+                    const ackPacket = createPacket('ACK', 'client', 'server', 'SYN=0, ACK=1');
+                    animatePacket(ackPacket, proceedToNextStep);
+                },
+                
+                // Step 4: Connection established
+                () => {
+                    updateServerState('ESTABLISHED');
+                    updateStatus('TCP connection established - Full duplex communication ready');
+                    updatePacketInfo(`
+                        <h4>Connection Established</h4>
+                        <p>Client State: ESTABLISHED</p>
+                        <p>Server State: ESTABLISHED</p>
+                        <p>Data transmission can now begin</p>
+                    `);
+                }
+            ];
+            
+            function proceedToNextStep() {
+                if (animationState.paused && !animationState.stepMode) return;
+                
+                animationState.currentStep++;
+                if (animationState.currentStep < steps.length) {
+                    if (animationState.stepMode) {
+                        // In step mode, wait for user to click next
+                        updateStatus(`Step ${animationState.currentStep + 1} ready. Click 'Next Step' to continue.`);
+                    } else {
+                        // Otherwise proceed automatically
+                        steps[animationState.currentStep]();
+                    }
+                }
+            }
+            
+            // Start the first step
+            steps[0]();
+        }
+        
+        function runSynAckLostScenario() {
+            if (animationState.running) resetVisualization();
+            
+            animationState.running = true;
+            animationState.scenarioType = 'synAckLost';
+            animationState.currentStep = 0;
+            
+            updateStatus('Initiating TCP handshake with SYN-ACK loss simulation...');
+            
+            const steps = [
+                // Step 1: Client sends SYN
+                () => {
+                    updateClientState('SYN-SENT');
+                    updateStatus('Step 1: Client sends SYN packet');
+                    updatePacketInfo(`
+                        <h4>SYN Packet</h4>
+                        <p>Flags: SYN=1, ACK=0</p>
+                        <p>Seq: 100</p>
+                        <p>Ack: 0</p>
+                    `);
+                    
+                    const synPacket = createPacket('SYN', 'client', 'server', 'SYN=1, ACK=0');
+                    animatePacket(synPacket, proceedToNextStep);
+                },
+                
+                // Step 2: Server sends SYN-ACK but it gets lost
+                () => {
+                    updateServerState('SYN-RECEIVED');
+                    updateStatus('Step 2: Server sends SYN-ACK packet (packet lost)');
+                    updatePacketInfo(`
+                        <h4>SYN-ACK Packet (Lost)</h4>
+                        <p>Flags: SYN=1, ACK=1</p>
+                        <p>Seq: 200</p>
+                        <p>Ack: 101</p>
+                        <p class="error">Packet lost in transit</p>
+                    `);
+                    
+                    const synAckPacket = createPacket('SYN-ACK', 'server', 'client', 'SYN=1, ACK=1');
+                    
+                    // Simulate packet loss halfway through
+                    setTimeout(() => {
+                        synAckPacket.style.opacity = "0";
+                        setTimeout(() => {
+                            if (synAckPacket.parentNode) {
+                                synAckPacket.parentNode.removeChild(synAckPacket);
+                            }
+                        }, 500);
+                    }, 500);
+                    
+                    // Move to next step after timeout (simulating client timeout)
+                    setTimeout(proceedToNextStep, 2000);
+                },
+                
+                // Step 3: Client retransmits SYN after timeout
+                () => {
+                    updateStatus('Step 3: Client timeout - Retransmitting SYN packet');
+                    updatePacketInfo(`
+                        <h4>SYN Packet (Retransmission)</h4>
+                        <p>Flags: SYN=1, ACK=0</p>
+                        <p>Seq: 100</p>
+                        <p>Ack: 0</p>
+                        <p>Retransmission after timeout</p>
+                    `);
+                    
+                    const synRetransmitPacket = createPacket('SYN (retry)', 'client', 'server', 'SYN=1, ACK=0');
+                    animatePacket(synRetransmitPacket, proceedToNextStep);
+                },
+                
+                // Step 4: Server sends SYN-ACK again
+                () => {
+                    updateStatus('Step 4: Server sends SYN-ACK packet');
+                    updatePacketInfo(`
+                        <h4>SYN-ACK Packet</h4>
+                        <p>Flags: SYN=1, ACK=1</p>
+                        <p>Seq: 200</p>
+                        <p>Ack: 101</p>
+                    `);
+                    
+                    const synAckPacket = createPacket('SYN-ACK', 'server', 'client', 'SYN=1, ACK=1');
+                    animatePacket(synAckPacket, proceedToNextStep);
+                },
+                
+                // Step 5: Client sends ACK
+                () => {
+                    updateClientState('ESTABLISHED');
+                    updateStatus('Step 5: Client sends ACK packet');
+                    updatePacketInfo(`
+                        <h4>ACK Packet</h4>
+                        <p>Flags: SYN=0, ACK=1</p>
+                        <p>Seq: 101</p>
+                        <p>Ack: 201</p>
+                    `);
+                    
+                    const ackPacket = createPacket('ACK', 'client', 'server', 'SYN=0, ACK=1');
+                    animatePacket(ackPacket, proceedToNextStep);
+                },
+                
+                // Step 6: Connection established
+                () => {
+                    updateServerState('ESTABLISHED');
+                    updateStatus('TCP connection established after recovery from packet loss');
+                    updatePacketInfo(`
+                        <h4>Connection Established</h4>
+                        <p>Client State: ESTABLISHED</p>
+                        <p>Server State: ESTABLISHED</p>
+                        <p>Connection successfully established after packet loss recovery</p>
+                    `);
+                }
+            ];
+            
+            function proceedToNextStep() {
+                if (animationState.paused && !animationState.stepMode) return;
+                
+                animationState.currentStep++;
+                if (animationState.currentStep < steps.length) {
+                    if (animationState.stepMode) {
+                        // In step mode, wait for user to click next
+                        updateStatus(`Step ${animationState.currentStep + 1} ready. Click 'Next Step' to continue.`);
+                    } else {
+                        // Otherwise proceed automatically
+                        steps[animationState.currentStep]();
+                    }
+                }
+            }
+            
+            // Start the first step
+            steps[0]();
+        }
+        
+        function runRstScenario() {
+            if (animationState.running) resetVisualization();
+            
+            animationState.running = true;
+            animationState.scenarioType = 'rst';
+            animationState.currentStep = 0;
+            
+            updateStatus('Initiating TCP handshake with RST scenario...');
+            
+            const steps = [
+                // Step 1: Client sends SYN
+                () => {
+                    updateClientState('SYN-SENT');
+                    updateStatus('Step 1: Client sends SYN packet');
+                    updatePacketInfo(`
+                        <h4>SYN Packet</h4>
+                        <p>Flags: SYN=1, ACK=0</p>
+                        <p>Seq: 100</p>
+                        <p>Ack: 0</p>
+                    `);
+                    
+                    const synPacket = createPacket('SYN', 'client', 'server', 'SYN=1, ACK=0');
+                    animatePacket(synPacket, proceedToNextStep);
+                },
+                
+                // Step 2: Server sends RST (port closed)
+                () => {
+                    updateStatus('Step 2: Server sends RST packet (port closed)');
+                    updatePacketInfo(`
+                        <h4>RST Packet</h4>
+                        <p>Flags: RST=1, ACK=1</p>
+                        <p>Seq: 0</p>
+                        <p>Ack: 101</p>
+                        <p>Reason: Port closed/unreachable</p>
+                    `);
+                    
+                    const rstPacket = createPacket('RST+ACK', 'server', 'client', 'RST=1, ACK=1');
+                    animatePacket(rstPacket, proceedToNextStep);
+                },
+                
+                // Step 3: Connection terminated
+                () => {
+                    updateClientState('CLOSED');
+                    updateStatus('Connection attempt rejected - RST received');
+                    updatePacketInfo(`
+                        <h4>Connection Rejected</h4>
+                        <p>Client State: CLOSED</p>
+                        <p>Server State: LISTEN</p>
+                        <p>Connection attempt failed due to RST</p>
+                        <p>Possible causes:
+                            <br>- Port not open
+                            <br>- Service not available
+                            <br>- Firewall blocking
+                        </p>
+                    `);
+                }
+            ];
+            
+            function proceedToNextStep() {
+                if (animationState.paused && !animationState.stepMode) return;
+                
+                animationState.currentStep++;
+                if (animationState.currentStep < steps.length) {
+                    if (animationState.stepMode) {
+                        // In step mode, wait for user to click next
+                        updateStatus(`Step ${animationState.currentStep + 1} ready. Click 'Next Step' to continue.`);
+                    } else {
+                        // Otherwise proceed automatically
+                        steps[animationState.currentStep]();
+                    }
+                }
+            }
+            
+            // Start the first step
+            steps[0]();
+        }
+        
+        function runSynFloodAttack() {
+            if (animationState.running) resetVisualization();
+            
+            animationState.running = true;
+            animationState.scenarioType = 'synFlood';
+            animationState.currentStep = 0;
+            
+            updateStatus('Simulating SYN Flood Attack...');
+            updateServerState('LISTEN');
+            
+            let synCount = 0;
+            const maxSyns = 20;
+            const attackInterval = setInterval(() => {
+                if (synCount >= maxSyns || !animationState.running) {
+                    clearInterval(attackInterval);
+                    
+                    if (animationState.running) {
+                        updateStatus('Server overwhelmed with half-open connections');
+                        updateServerState('RESOURCE EXHAUSTION');
+                        updatePacketInfo(`
+                            <h4>SYN Flood Attack</h4>
+                            <p>Attack type: TCP SYN Flood</p>
+                            <p>Half-open connections: ${synCount}</p>
+                            <p>Server status: Resource exhaustion</p>
+                            <p>Impact: Denial of Service - legitimate clients cannot establish new connections</p>
+                        `);
+                    }
+                    return;
+                }
+                
+                // Create random positions for the attackers
+                const attackerX = Math.random() * 100 + 50;
+                const attackerY = Math.random() * 300 + 50;
+                
+                // Create the SYN packet with spoofed source
+                const synPacket = document.createElement('div');
+                synPacket.className = 'packet';
+                synPacket.textContent = 'SYN';
+                synPacket.style.left = `${attackerX}px`;
+                synPacket.style.top = `${attackerY}px`;
+                synPacket.style.backgroundColor = 'rgba(255, 0, 0, 0.3)';
+                synPacket.style.borderColor = '#ff3333';
+                
+                document.getElementById('visualization').appendChild(synPacket);
+                packets.push(synPacket);
+                
+                // Animate to server
+                const serverRect = serverNode.getBoundingClientRect();
+                const containerRect = document.getElementById('visualization').getBoundingClientRect();
+                const toX = serverRect.left - containerRect.left + serverRect.width / 2;
+                const toY = serverRect.top - containerRect.top + serverRect.height / 2;
+                
+                synPacket.style.transition = 'all 0.5s linear';
+                synPacket.style.left = `${toX}px`;
+                synPacket.style.top = `${toY}px`;
+                
+                // Update server state periodically
+                if (synCount === 5) {
+                    updateServerState('BACKLOG GROWING');
+                    updatePacketInfo(`
+                        <h4>SYN Flood Progress</h4>
+                        <p>Attack type: TCP SYN Flood</p>
+                        <p>Half-open connections: ${synCount}</p>
+                        <p>Server status: Backlog filling</p>
+                    `);
+                } else if (synCount === 10) {
+                    updateServerState('HIGH LOAD');
+                    updatePacketInfo(`
+                        <h4>SYN Flood Progress</h4>
+                        <p>Attack type: TCP SYN Flood</p>
+                        <p>Half-open connections: ${synCount}</p>
+                        <p>Server status: Connection queue near capacity</p>
+                    `);
+                } else if (synCount === 15) {
+                    updateServerState('CRITICAL');
+                    updatePacketInfo(`
+                        <h4>SYN Flood Progress</h4>
+                        <p>Attack type: TCP SYN Flood</p>
+                        <p>Half-open connections: ${synCount}</p>
+                        <p>Server status: Resources nearly exhausted</p>
+                    `);
+                }
+                
+                synCount++;
+            }, 300);
+        }
+        
+        // Set up event listeners for buttons
+        document.getElementById('normalHandshake').addEventListener('click', runNormalHandshake);
+        document.getElementById('synAckLost').addEventListener('click', runSynAckLostScenario);
+        document.getElementById('rstScenario').addEventListener('click', runRstScenario);
+        document.getElementById('synFloodAttack').addEventListener('click', runSynFloodAttack);
+        document.getElementById('reset').addEventListener('click', resetVisualization);
+        
+        // Pause/Resume functionality
+        document.getElementById('pauseResume').addEventListener('click', function() {
+            if (!animationState.running) return;
+            
+            animationState.paused = !animationState.paused;
+            this.textContent = animationState.paused ? 'Resume' : 'Pause';
+            
+            if (!animationState.paused && !animationState.stepMode) {
+                // If we're resuming and not in step mode, proceed to next step
+                const nextStepFn = getNextStepFunction();
+                if (nextStepFn) nextStepFn();
+            }
+        });
+        
+        // Step-by-step functionality
+        const stepByStepBtn = document.getElementById('stepByStep');
+        stepByStepBtn.addEventListener('click', function() {
+            if (!animationState.running) return;
+            
+            animationState.stepMode = !animationState.stepMode;
+            this.textContent = animationState.stepMode ? 'Next Step' : 'Step-by-Step Mode';
+            
+            if (animationState.stepMode) {
+                // If we're entering step mode, pause
+                animationState.paused = true;
+                document.getElementById('pauseResume').textContent = 'Resume';
+                
+                // If we're in step mode and click Next Step, proceed to next step
+                if (animationState.stepMode) {
+                    const nextStepFn = getNextStepFunction();
+                    if (nextStepFn) nextStepFn();
+                }
+            }
+        });
+        
+        function getNextStepFunction() {
+            // Get the appropriate next step function based on scenario type
+            switch (animationState.scenarioType) {
+                case 'normal':
+                    return getNormalHandshakeStep(animationState.currentStep);
+                case 'synAckLost':
+                    return getSynAckLostStep(animationState.currentStep);
+                case 'rst':
+                    return getRstStep(animationState.currentStep);
+                default:
+                    return null;
+            }
+        }
+        
+        function getNormalHandshakeStep(step) {
+            const steps = [
+                // Step functions for normal handshake
+            ];
+            return step < steps.length ? steps[step] : null;
+        }
+        
+        function getSynAckLostStep(step) {
+            const steps = [
+                // Step functions for SYN-ACK lost scenario
+            ];
+            return step < steps.length ? steps[step] : null;
+        }
+        
+        function getRstStep(step) {
+            const steps = [
+                // Step functions for RST scenario
+            ];
+            return step < steps.length ? steps[step] : null;
+        }
+        
+        // Initialize the visualization
+        resetVisualization();
+    </script>
+</body>
+</html>
