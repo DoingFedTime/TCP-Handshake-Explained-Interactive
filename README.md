@@ -61,7 +61,7 @@ git clone https://github.com/DoingFedTime/TCP-Handshake-Explained-Interactive.gi
 
 2. Open the HTML file in any modern browser:
 ```
-open index.html
+open tcp-handshake-visualization.html 
 ```
 
 ## License
